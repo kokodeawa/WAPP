@@ -3,7 +3,8 @@
 
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { DailyExpense, Category, PayCycleConfig, FutureExpense, BudgetRecord, CycleProfile } from '../types';
+// FIX: Corrected import path for types
+import { DailyExpense, Category, PayCycleConfig, FutureExpense, BudgetRecord, CycleProfile } from '../src/types';
 import { CycleSettingsModal } from './CycleSettingsModal';
 import { FutureExpenseModal } from './FutureExpenseModal';
 import { CustomSelect } from './CustomSelect';

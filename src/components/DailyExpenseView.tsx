@@ -24,7 +24,10 @@ interface DailyExpenseViewProps {
 type SubTab = 'calendar' | 'planned';
 
 const toISODateString = (date: Date): string => {
-  return date.toISOString().split('T')[0];
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 const CycleManager: React.FC<{
@@ -162,7 +165,7 @@ export const DailyExpenseView: React.FC<DailyExpenseViewProps> = ({
     if (!payCycleConfig) return new Set();
     
     const days = new Set<string>();
-    let payDate = new Date(payCycleConfig.startDate);
+    let payDate = new Date(`${payCycleConfig.startDate}T00:00:00`);
     const month = currentDate.getMonth();
     const year = currentDate.getFullYear();
     const endDate = new Date(year, month + 1, 0);
@@ -199,7 +202,7 @@ export const DailyExpenseView: React.FC<DailyExpenseViewProps> = ({
     const monthEndDate = new Date(year, month + 1, 0);
 
     for (const fe of futureExpenses) {
-        let occurrenceDate = new Date(fe.startDate);
+        let occurrenceDate = new Date(`${fe.startDate}T00:00:00`);
         const feEndDate = fe.endDate ? new Date(fe.endDate) : null;
         
         while(occurrenceDate <= monthEndDate && (!feEndDate || occurrenceDate <= feEndDate)) {
@@ -382,7 +385,7 @@ export const DailyExpenseView: React.FC<DailyExpenseViewProps> = ({
                                         {category?.name} &bull; ${exp.amount.toFixed(2)}
                                     </p>
                                     <p className="text-xs text-neutral-400 capitalize">
-                                        {exp.frequency.replace('-', ' ')} &bull; Inicia: {new Date(exp.startDate).toLocaleDateString()}
+                                        {exp.frequency.replace('-', ' ')} &bull; Inicia: {new Date(`${exp.startDate}T00:00:00`).toLocaleDateString()}
                                     </p>
                                 </div>
                                 <div className="flex items-center space-x-2">
@@ -477,4 +480,185 @@ export const DailyExpenseView: React.FC<DailyExpenseViewProps> = ({
         {activeCycleId ? (
             activeSubTab === 'calendar' ? (
                 <>
-                    <div className="flex justify
+                    <div className="flex justify-between items-center mb-4">
+                    <button onClick={handlePrevMonth} className="p-2 rounded-full active:bg-neutral-700"><i className="fa-solid fa-chevron-left"></i></button>
+                    <h3 className="text-xl font-bold">{currentDate.toLocaleString('es-ES', { month: 'long', year: 'numeric' })}</h3>
+                    <button onClick={handleNextMonth} className="p-2 rounded-full active:bg-neutral-700"><i className="fa-solid fa-chevron-right"></i></button>
+                    </div>
+
+                    <div className="grid grid-cols-7 border-t border-l border-neutral-700 select-none">
+                    {weekDays.map(day => (
+                        <div key={day} className="text-center font-bold p-2 border-r border-b border-neutral-700 text-sm text-neutral-400">{day}</div>
+                    ))}
+                    {renderCalendar()}
+                    </div>
+                </>
+            ) : (
+                renderPlannedExpenses()
+            )
+        ) : (
+            <div className="text-center py-12">
+                <p className="text-neutral-400">Por favor, crea o selecciona un calendario para empezar.</p>
+            </div>
+        )}
+
+      </div>
+
+      {/* Expense Modal */}
+      {isExpenseModalOpen && selectedDate && (() => {
+        const selectedDateKey = toISODateString(selectedDate);
+        const plannedForDay = plannedExpensesInMonth.get(selectedDateKey) || [];
+
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex justify-center items-center z-50 p-4" onClick={closeExpenseModal}>
+                <div className="bg-neutral-800 rounded-2xl shadow-xl p-6 w-full max-w-md transform transition-all animate-fade-in-scale" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-lg font-bold mb-4 text-neutral-100">Gastos del {selectedDate.toLocaleDateString('es-ES')}</h3>
+                    
+                    {plannedForDay.length > 0 && (
+                        <div className="mb-4 border-b border-neutral-700 pb-4">
+                            <h4 className="text-sm font-semibold text-neutral-300 mb-2 flex items-center gap-2">
+                                <i className="fa-solid fa-flag text-blue-400"></i>
+                                Gastos Planificados
+                            </h4>
+                            <div className="space-y-2 max-h-32 overflow-y-auto pr-2">
+                                {plannedForDay.map(pExp => {
+                                    const category = categoryMap.get(pExp.categoryId);
+                                    return (
+                                        <div key={pExp.id} className="flex justify-between items-center bg-neutral-700/50 p-2 rounded-lg">
+                                            <div className="flex items-center gap-3">
+                                                {category && <i className={`${category.icon} fa-fw`} style={{ color: category.color }}></i>}
+                                                <span className="text-sm text-neutral-200">{pExp.note}</span>
+                                            </div>
+                                            <span className="font-semibold text-sm text-neutral-100">${pExp.amount.toFixed(2)}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                    
+                    <h4 className="text-sm font-semibold text-neutral-300 mb-2 flex items-center gap-2">
+                        <i className="fa-solid fa-cash-register text-green-400"></i>
+                        Gastos Registrados
+                    </h4>
+                    <div className="space-y-2 max-h-48 overflow-y-auto mb-4 pr-2">
+                        {selectedDateExpenses.length === 0 ? (
+                            <p className="text-sm text-neutral-400">No hay gastos para este día.</p>
+                        ) : (
+                            selectedDateExpenses.map(exp => {
+                                const category = categoryMap.get(exp.categoryId);
+                                return (
+                                    <div key={exp.id} className="flex justify-between items-center bg-neutral-700 p-2 rounded-lg">
+                                        <div className="flex items-center gap-3">
+                                            {category && <i className={`${category.icon} fa-fw`} style={{ color: category.color }}></i>}
+                                            <span className="text-neutral-200">{exp.note || category?.name}</span>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <span className="font-semibold text-neutral-100">${exp.amount.toFixed(2)}</span>
+                                            <button onClick={() => handleDeleteExpense(selectedDate, exp.id)} className="text-red-500 active:text-red-700 w-6 h-6 rounded flex items-center justify-center"><i className="fa-solid fa-trash-can text-xs"></i></button>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                    <form onSubmit={handleAddExpense} className="space-y-3 border-t border-neutral-700 pt-4">
+                        <CustomSelect
+                            options={categoryOptions}
+                            value={newExpenseCategoryId}
+                            onChange={setNewExpenseCategoryId}
+                            className="[&>button]:p-2 [&>button]:text-base [&>button]:font-normal"
+                        />
+                        <input type="text" value={newExpenseNote} onChange={e => setNewExpenseNote(e.target.value)} placeholder="Nota (ej. Café)" className="w-full p-2 bg-neutral-700 text-white border border-neutral-600 rounded-lg" />
+                        <input type="number" value={newExpenseAmount} onChange={e => setNewExpenseAmount(e.target.value)} placeholder="Importe" className="w-full p-2 bg-neutral-700 text-white border border-neutral-600 rounded-lg" min="0.01" step="0.01" required />
+                        <button type="submit" className="w-full bg-blue-600 active:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Añadir Gasto</button>
+                    </form>
+                </div>
+            </div>
+        )
+      })()}
+
+      {/* Other Modals */}
+       <CycleSettingsModal
+        isOpen={isCycleModalOpen}
+        onClose={() => setIsCycleModalOpen(false)}
+        profiles={cycleProfiles}
+        setProfiles={setCycleProfiles}
+        setActiveId={setActiveCycleId}
+        onInitiateDelete={handleInitiateDeleteCycle}
+        initialExpandedId={expandedInCycleModalId}
+        onExpandedChange={setExpandedInCycleModalId}
+      />
+      <FutureExpenseModal 
+        isOpen={isFutureExpenseModalOpen}
+        onClose={() => setIsFutureExpenseModalOpen(false)}
+        expense={editingFutureExpense}
+        setFutureExpenses={setFutureExpenses}
+        categories={categories}
+      />
+      <CurrentCycleBudgetView
+        isOpen={isCycleBudgetModalOpen}
+        onClose={() => setIsCycleBudgetModalOpen(false)}
+        budget={currentCycleBudget}
+      />
+
+       {/* Delete Cycle Confirmation Modal */}
+        {deletingCycleProfile && (
+            <div
+                className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex justify-center items-center z-50 transition-opacity duration-300 p-4"
+                onClick={handleCancelDeleteCycle}
+                aria-modal="true"
+                role="dialog"
+            >
+                <div
+                    className="bg-neutral-800 rounded-2xl shadow-xl p-8 w-full max-w-md m-4 transform transition-all duration-300 scale-95 opacity-0 animate-fade-in-scale text-center"
+                    onClick={e => e.stopPropagation()}
+                >
+                    <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-900/50 mb-4">
+                        <i className="fa-solid fa-triangle-exclamation text-2xl text-red-400"></i>
+                    </div>
+                    <h2 className="text-2xl font-bold mb-2 text-neutral-100">Eliminar Calendario</h2>
+                    <p className="text-neutral-300 mb-6">
+                        ¿Seguro que quieres eliminar el calendario <strong className="text-neutral-100">"{deletingCycleProfile.name}"</strong>?
+                        <br/>
+                        Todos los gastos diarios y planificados asociados a él serán borrados permanentemente. Esta acción no se puede deshacer.
+                    </p>
+                    <div className="mt-8 flex justify-center space-x-4">
+                    <button
+                        onClick={handleCancelDeleteCycle}
+                        className="px-6 py-2.5 rounded-lg bg-neutral-600 text-neutral-200 active:bg-neutral-500 font-semibold transition-colors"
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={handleConfirmDeleteCycle}
+                        className="px-8 py-2.5 rounded-lg bg-red-600 active:bg-red-700 text-white font-bold transition-colors shadow-lg shadow-red-500/20"
+                        autoFocus
+                    >
+                        Sí, Eliminar
+                    </button>
+                    </div>
+                </div>
+                <style>{`
+                    @keyframes fade-in-scale {
+                      from { opacity: 0; transform: scale(0.95); }
+                      to { opacity: 1; transform: scale(1); }
+                    }
+                    .animate-fade-in-scale {
+                      animation: fade-in-scale 0.2s ease-out forwards;
+                    }
+                `}</style>
+            </div>
+        )}
+    <style>{`
+        @keyframes fade-in-scale {
+          from { opacity: 0; transform: scale(0.98); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        .animate-fade-in-scale {
+          animation: fade-in-scale 0.3s ease-out forwards;
+        }
+    `}</style>
+    </>
+  );
+};

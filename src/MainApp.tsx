@@ -390,7 +390,7 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
         }
         
         if (payCycleConfig) {
-            let cycleStartDate = new Date(payCycleConfig.startDate);
+            let cycleStartDate = new Date(`${payCycleConfig.startDate}T00:00:00`);
             cycleStartDate.setHours(0, 0, 0, 0);
             let nextCycleDate = new Date(cycleStartDate);
 
@@ -418,15 +418,13 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
                  const budgetExists = savedBudgets.some(b => b.name.includes(`(${cycleStartDate.toLocaleDateString()})`));
 
                  if (!budgetExists) {
-                    // FIX: Replaced .map().flat() with .reduce() for better TypeScript type inference.
                     const dailyExpensesForCycle = Object.entries(dailyExpenses)
                         .filter(([dateKey]) => dateKey >= cycleStartDateStr && dateKey <= cycleEndDateStr)
-                        // Fix: Cast `daily` to `DailyExpense[]` to resolve type inference issue.
                         .reduce((acc: DailyExpense[], [, daily]) => acc.concat(daily as DailyExpense[]), []);
 
                     const futureExpensesForCycle: DailyExpense[] = [];
                     futureExpenses.forEach(fe => {
-                        let occurrenceDate = new Date(fe.startDate);
+                        let occurrenceDate = new Date(`${fe.startDate}T00:00:00`);
                         const feEndDate = fe.endDate ? new Date(fe.endDate) : null;
                         
                         while(occurrenceDate <= cycleEndDate) {
@@ -476,7 +474,7 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        let cycleStartDate = new Date(payCycleConfig.startDate);
+        let cycleStartDate = new Date(`${payCycleConfig.startDate}T00:00:00`);
         cycleStartDate.setHours(0, 0, 0, 0);
         
         if (cycleStartDate > today) { // Cycle hasn't started yet
@@ -516,7 +514,7 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
         
         const future = futureExpenses.flatMap(fe => {
             const occurrences: DailyExpense[] = [];
-            let currentDate = new Date(fe.startDate);
+            let currentDate = new Date(`${fe.startDate}T00:00:00`);
             const feEndDate = fe.endDate ? new Date(fe.endDate) : null;
 
             while(currentDate <= cycleEndDate && (!feEndDate || currentDate <= feEndDate)) {
@@ -723,7 +721,7 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
     const today = new Date();
     today.setHours(23, 59, 59, 999); // Use end of today for inclusive check
 
-    let cycleStartDate = new Date(payCycleConfig.startDate);
+    let cycleStartDate = new Date(`${payCycleConfig.startDate}T00:00:00`);
     cycleStartDate.setHours(0, 0, 0, 0);
 
     // Find the start date of the current cycle
@@ -749,16 +747,14 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
     const cycleEndDateStr = today.toISOString().split('T')[0];
 
     // Get daily expenses
-    // FIX: Replaced .map().flat() with .reduce() for better TypeScript type inference.
     const dailyExpensesForPeriod = Object.entries(dailyExpenses)
       .filter(([dateKey]) => dateKey >= cycleStartDateStr && dateKey <= cycleEndDateStr)
-      // Fix: Cast `daily` to `DailyExpense[]` to resolve type inference issue.
       .reduce((acc: DailyExpense[], [, daily]) => acc.concat(daily as DailyExpense[]), []);
 
     // Get future expenses
     const futureExpensesForPeriod: DailyExpense[] = [];
     futureExpenses.forEach(fe => {
-      let currentDate = new Date(fe.startDate);
+      let currentDate = new Date(`${fe.startDate}T00:00:00`);
       const feEndDate = fe.endDate ? new Date(fe.endDate) : null;
       while (currentDate <= today) {
         if (currentDate >= periodStartDate && (!feEndDate || currentDate <= feEndDate)) {

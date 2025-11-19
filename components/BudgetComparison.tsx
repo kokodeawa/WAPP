@@ -1,7 +1,8 @@
 
 
 import React from 'react';
-import { BudgetRecord } from '../types';
+// FIX: Corrected import path for types
+import { BudgetRecord } from '../src/types';
 
 interface BudgetComparisonProps {
   current: BudgetRecord;

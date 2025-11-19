@@ -1,6 +1,7 @@
 
 import React, { useMemo } from 'react';
-import { BudgetRecord, Category } from '../types';
+// FIX: Corrected import path for types
+import { BudgetRecord, Category } from '../src/types';
 import { SummaryCard } from './SummaryCard';
 
 interface CurrentCycleBudgetViewProps {

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Category } from '../types';
+// FIX: Corrected import path for types
+import { Category } from '../src/types';
 
 interface CategoryInputProps {
   category: Category;

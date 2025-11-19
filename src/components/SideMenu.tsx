@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { LogoutConfirmationModal } from './LogoutConfirmationModal';
 
 interface SideMenuProps {
   isOpen: boolean;
@@ -9,11 +10,10 @@ interface SideMenuProps {
 
 export const SideMenu: React.FC<SideMenuProps> = ({ isOpen, onClose, currentUser, onLogout }) => {
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
   const handleLogoutClick = () => {
-    if (window.confirm('¿Estás seguro de que quieres cerrar sesión?')) {
-      onLogout();
-    }
+    setIsLogoutModalOpen(true);
   };
 
   return (
@@ -99,6 +99,11 @@ export const SideMenu: React.FC<SideMenuProps> = ({ isOpen, onClose, currentUser
           </div>
         </div>
       </div>
+      <LogoutConfirmationModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+        onConfirm={onLogout}
+      />
     </>
   );
 };

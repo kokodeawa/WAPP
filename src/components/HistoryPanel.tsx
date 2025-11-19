@@ -1,7 +1,6 @@
 
 import React, { useMemo } from 'react';
-// FIX: Corrected import path for types
-import { BudgetRecord, PayCycleFrequency } from '../src/types';
+import { BudgetRecord, PayCycleFrequency } from '../types';
 
 interface HistoryPanelProps {
   budgets: BudgetRecord[];

@@ -1,6 +1,5 @@
 import React from 'react';
-// FIX: Corrected import path for types
-import { PayCycleFrequency } from '../src/types';
+import { PayCycleFrequency } from '../types';
 
 interface FrequencySelectorProps {
   selected: PayCycleFrequency;

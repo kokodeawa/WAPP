@@ -1,8 +1,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
-// FIX: Corrected import path for types
-import { BudgetRecord, PayCycleFrequency } from '../src/types';
+import { BudgetRecord, PayCycleFrequency } from '../types';
 import { BudgetChart } from './BudgetChart';
 import { GlobalSavingsCard } from './GlobalSavingsCard';
 import { SummaryCard } from './SummaryCard';

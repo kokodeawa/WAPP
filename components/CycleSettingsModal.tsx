@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { CycleProfile, PayCycleConfig, PayCycleFrequency } from '../types';
+// FIX: Corrected import path for types
+import { CycleProfile, PayCycleConfig, PayCycleFrequency } from '../src/types';
 import { CustomSelect } from './CustomSelect';
 
 const toISODateString = (date: Date): string => {

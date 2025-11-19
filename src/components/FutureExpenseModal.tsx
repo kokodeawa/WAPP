@@ -1,7 +1,5 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
-// FIX: Corrected import path for types
-import { FutureExpense, FutureExpenseFrequency, Category } from '../src/types';
+import { FutureExpense, FutureExpenseFrequency, Category } from '../types';
 import { CustomSelect } from './CustomSelect';
 
 interface FutureExpenseModalProps {
@@ -13,7 +11,10 @@ interface FutureExpenseModalProps {
 }
 
 const toISODateString = (date: Date): string => {
-  return date.toISOString().split('T')[0];
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 export const FutureExpenseModal: React.FC<FutureExpenseModalProps> = ({

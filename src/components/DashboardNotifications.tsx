@@ -1,8 +1,7 @@
 
 
 import React, { useMemo } from 'react';
-// FIX: Corrected import path for types
-import { DailyExpense, FutureExpense, Category, CycleProfile } from '../src/types';
+import { DailyExpense, FutureExpense, Category, CycleProfile } from '../types';
 
 interface DashboardNotificationsProps {
   allDailyExpenses: { [cycleId: string]: { [date: string]: DailyExpense[] } };
@@ -66,7 +65,7 @@ export const DashboardNotifications: React.FC<DashboardNotificationsProps> = ({
         const allUpcoming: (FutureExpense & { date: Date })[] = [];
 
         for (const fe of flatFutureExpenses) {
-            let currentDate = new Date(fe.startDate);
+            let currentDate = new Date(`${fe.startDate}T00:00:00`);
             const feEndDate = fe.endDate ? new Date(fe.endDate) : null;
 
             if (currentDate > threeDaysFromNow) continue;
@@ -99,10 +98,9 @@ export const DashboardNotifications: React.FC<DashboardNotificationsProps> = ({
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        // FIX: Explicitly typed the generic for reduce to fix type inference issues with flattening the array.
         const upcoming = Object.values(allFutureExpenses).reduce<FutureExpense[]>((acc, val) => acc.concat(val as FutureExpense[]), []).flatMap(fe => {
             const occurrences = [];
-            let currentDate = new Date(fe.startDate);
+            let currentDate = new Date(`${fe.startDate}T00:00:00`);
             const feEndDate = fe.endDate ? new Date(fe.endDate) : null;
 
             while (!feEndDate || currentDate <= feEndDate) {
