@@ -28,7 +28,13 @@ interface CurrentPeriodSpendingProps {
   periodEndDate: Date | null;
 }
 
-const FabAction = ({ buttonProps, label, icon }: { buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement>, label: string, icon: string }) => (
+interface FabActionProps {
+  buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement>, 
+  label: string, 
+  icon: string
+}
+
+const FabAction: React.FC<FabActionProps> = ({ buttonProps, label, icon }) => (
     <div className="flex items-center gap-3 w-max justify-end">
         <span className="bg-neutral-700 text-neutral-200 text-xs font-semibold px-3 py-1 rounded-md shadow-md">
             {label}
@@ -120,7 +126,8 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
   const [savedBudgets, setSavedBudgets] = useState<BudgetRecord[]>(() => {
     try {
       const item = window.localStorage.getItem(KEYS.BUDGETS);
-      return item ? JSON.parse(item) : [];
+      const parsed = item ? JSON.parse(item) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch (error) {
       console.error("Failed to parse budgets from localStorage", error);
       return [];
@@ -131,7 +138,7 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
      try {
       const item = window.localStorage.getItem(KEYS.BUDGETS);
       const budgets = item ? JSON.parse(item) : [];
-      if (budgets.length > 0) {
+      if (Array.isArray(budgets) && budgets.length > 0) {
         const sorted = [...budgets].sort((a, b) => new Date(b.dateSaved).getTime() - new Date(a.dateSaved).getTime());
         return sorted[0].id;
       }
@@ -145,7 +152,8 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
   const [globalSavings, setGlobalSavings] = useState<number>(() => {
      try {
       const item = window.localStorage.getItem(KEYS.GLOBAL_SAVINGS);
-      return item ? JSON.parse(item) : 0;
+      const parsed = item ? JSON.parse(item) : 0;
+      return typeof parsed === 'number' ? parsed : 0;
     } catch (error) {
       console.error("Failed to parse global savings from localStorage", error);
       return 0;
@@ -155,26 +163,42 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
   const [cycleProfiles, setCycleProfiles] = useState<CycleProfile[]>(() => {
     try {
         const item = window.localStorage.getItem(KEYS.CYCLE_PROFILES);
-        return item ? JSON.parse(item) : [];
+        const parsed = item ? JSON.parse(item) : [];
+        return Array.isArray(parsed) ? parsed : [];
     } catch { return []; }
   });
   const [activeCycleId, setActiveCycleId] = useState<string | null>(() => {
     try {
-        const item = window.localStorage.getItem(KEYS.ACTIVE_CYCLE_ID);
-        return item ? JSON.parse(item) : null;
+        return window.localStorage.getItem(KEYS.ACTIVE_CYCLE_ID);
     } catch { return null; }
   });
+  
   const [allDailyExpenses, setAllDailyExpenses] = useState<{ [cycleId: string]: { [date: string]: DailyExpense[] } }>(() => {
+    const item = window.localStorage.getItem(KEYS.ALL_DAILY);
+    if (!item) return {};
     try {
-        const item = window.localStorage.getItem(KEYS.ALL_DAILY);
-        return item ? JSON.parse(item) : {};
-    } catch { return {}; }
+        const parsed = JSON.parse(item);
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+            return parsed;
+        }
+    } catch (e) {
+        console.error("Failed to parse allDailyExpenses:", e);
+    }
+    return {};
   });
+
   const [allFutureExpenses, setAllFutureExpenses] = useState<{ [cycleId: string]: FutureExpense[] }>(() => {
+    const item = window.localStorage.getItem(KEYS.ALL_FUTURE);
+    if (!item) return {};
     try {
-        const item = window.localStorage.getItem(KEYS.ALL_FUTURE);
-        return item ? JSON.parse(item) : {};
-    } catch { return {}; }
+        const parsed = JSON.parse(item);
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+            return parsed;
+        }
+    } catch (e) {
+        console.error("Failed to parse allFutureExpenses:", e);
+    }
+    return {};
   });
     
   const [lastCycleCheckDate, setLastCycleCheckDate] = useState<string | null>(() => {
@@ -234,752 +258,399 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
      // Effect to clean up orphaned expense data when a profile is deleted
     useEffect(() => {
         const profileIds = new Set(cycleProfiles.map(p => p.id));
-
-        const cleanup = <T,>(data: { [key: string]: T }): { [key: string]: T } => {
-            const cleanedData: { [key: string]: T } = {};
-            let changed = false;
-            for (const id in data) {
-                if (profileIds.has(id)) {
-                    cleanedData[id] = data[id];
-                } else {
-                    changed = true;
+        
+        const cleanExpenses = (allExpenses: any) => {
+            const cleaned: any = {};
+            for(const profileId in allExpenses) {
+                if (profileIds.has(profileId)) {
+                    cleaned[profileId] = allExpenses[profileId];
                 }
             }
-            return changed ? cleanedData : data;
-        };
+            return cleaned;
+        }
 
-        setAllDailyExpenses(prev => cleanup(prev));
-        setAllFutureExpenses(prev => cleanup(prev));
-
+        setAllDailyExpenses(prev => cleanExpenses(prev));
+        setAllFutureExpenses(prev => cleanExpenses(prev));
     }, [cycleProfiles]);
 
 
-    // Selectors for active cycle data
-    const activeCycle = useMemo(() => cycleProfiles.find(p => p.id === activeCycleId), [cycleProfiles, activeCycleId]);
-    const payCycleConfig = useMemo(() => activeCycle?.config || null, [activeCycle]);
-    const dailyExpenses = useMemo(() => (activeCycleId ? allDailyExpenses[activeCycleId] : {}) || {}, [allDailyExpenses, activeCycleId]);
-    const futureExpenses = useMemo(() => (activeCycleId ? allFutureExpenses[activeCycleId] : []) || [], [allFutureExpenses, activeCycleId]);
+  // Derived state for the active budget
+  const activeBudget = useMemo(() => {
+    return savedBudgets.find(b => b.id === activeBudgetId);
+  }, [savedBudgets, activeBudgetId]);
 
-    // Wrapped setters for active cycle data
-    const setDailyExpenses = useCallback((updater: React.SetStateAction<{ [date: string]: DailyExpense[] }>) => {
-        if (!activeCycleId) return;
-        setAllDailyExpenses(prev => {
-            const currentExpenses = prev[activeCycleId] || {};
-            const newExpenses = typeof updater === 'function' ? updater(currentExpenses) : updater;
-            return { ...prev, [activeCycleId]: newExpenses };
-        });
-    }, [activeCycleId]);
-
-    const setFutureExpenses = useCallback((updater: React.SetStateAction<FutureExpense[]>) => {
-        if (!activeCycleId) return;
-        setAllFutureExpenses(prev => {
-            const currentExpenses = prev[activeCycleId] || [];
-            const newExpenses = typeof updater === 'function' ? updater(currentExpenses) : updater;
-            return { ...prev, [activeCycleId]: newExpenses };
-        });
-    }, [activeCycleId]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(KEYS.BUDGETS, JSON.stringify(savedBudgets));
-      const totalSaved = savedBudgets.reduce((total, budget) => {
-        const savingsCategory = budget.categories.find(c => c.id === 'savings');
-        return total + (savingsCategory ? savingsCategory.amount : 0);
-      }, 0);
-      setGlobalSavings(totalSaved);
-    } catch (error) {
-      console.error("Failed to save budgets to localStorage", error);
+  // Derived state for current expenses (for the active cycle)
+  const currentDailyExpenses = useMemo<{ [date: string]: DailyExpense[] }>(() => activeCycleId ? allDailyExpenses[activeCycleId] || {} : {}, [allDailyExpenses, activeCycleId]);
+  const currentFutureExpenses = useMemo(() => activeCycleId ? allFutureExpenses[activeCycleId] || [] : [], [allFutureExpenses, activeCycleId]);
+  const setCurrentDailyExpenses = useCallback((expenses: React.SetStateAction<{ [date: string]: DailyExpense[] }>) => {
+    if (activeCycleId) {
+      setAllDailyExpenses(prev => ({ ...prev, [activeCycleId]: typeof expenses === 'function' ? expenses(prev[activeCycleId] || {}) : expenses }));
     }
-  }, [savedBudgets, KEYS.BUDGETS]);
+  }, [activeCycleId]);
+  const setCurrentFutureExpenses = useCallback((expenses: React.SetStateAction<FutureExpense[]>) => {
+    if (activeCycleId) {
+      setAllFutureExpenses(prev => ({ ...prev, [activeCycleId]: typeof expenses === 'function' ? expenses(prev[activeCycleId] || []) : expenses }));
+    }
+  }, [activeCycleId]);
   
-   useEffect(() => {
-    try {
-      window.localStorage.setItem(KEYS.GLOBAL_SAVINGS, JSON.stringify(globalSavings));
-    } catch (error) {
-      console.error("Failed to save global savings to localStorage", error);
+  const activeCycleProfile = useMemo(() => cycleProfiles.find(p => p.id === activeCycleId), [cycleProfiles, activeCycleId]);
+  const activeCycleConfig = useMemo(() => activeCycleProfile?.config || null, [activeCycleProfile]);
+
+  const { currentPeriodSpending, periodStartDate, periodEndDate } = useMemo(() => {
+    if (!activeCycleConfig) {
+      return { currentPeriodSpending: [], periodStartDate: null, periodEndDate: null };
     }
-  }, [globalSavings, KEYS.GLOBAL_SAVINGS]);
-
-    useEffect(() => {
-        try {
-            window.localStorage.setItem(KEYS.CYCLE_PROFILES, JSON.stringify(cycleProfiles));
-        } catch (error) {
-            console.error("Failed to save cycle profiles to localStorage", error);
-        }
-    }, [cycleProfiles, KEYS.CYCLE_PROFILES]);
-
-    useEffect(() => {
-        try {
-            window.localStorage.setItem(KEYS.ACTIVE_CYCLE_ID, JSON.stringify(activeCycleId));
-        } catch (error) {
-            console.error("Failed to save active cycle ID to localStorage", error);
-        }
-    }, [activeCycleId, KEYS.ACTIVE_CYCLE_ID]);
-
-    useEffect(() => {
-        try {
-            window.localStorage.setItem(KEYS.ALL_DAILY, JSON.stringify(allDailyExpenses));
-        } catch (error) {
-            console.error("Failed to save all daily expenses to localStorage", error);
-        }
-    }, [allDailyExpenses, KEYS.ALL_DAILY]);
-
-    useEffect(() => {
-        try {
-            window.localStorage.setItem(KEYS.ALL_FUTURE, JSON.stringify(allFutureExpenses));
-        } catch (error) {
-            console.error("Failed to save all future expenses to localStorage", error);
-        }
-    }, [allFutureExpenses, KEYS.ALL_FUTURE]);
-
-    useEffect(() => {
-        try {
-            if (lastCycleCheckDate) {
-                window.localStorage.setItem(KEYS.LAST_CYCLE_CHECK, lastCycleCheckDate);
-            }
-        } catch (error) {
-             console.error("Failed to save last cycle check date to localStorage", error);
-        }
-    }, [lastCycleCheckDate, KEYS.LAST_CYCLE_CHECK]);
-
-  const handleCreateBudgetFromExpenses = useCallback((name: string, income: number, expensesForPeriod: DailyExpense[], isAutomatic: boolean = false) => {
-    const categoryTotals: { [key: string]: number } = {};
-    for (const expense of expensesForPeriod) {
-        categoryTotals[expense.categoryId] = (categoryTotals[expense.categoryId] || 0) + expense.amount;
-    }
-
-    const totalSpent = Object.values(categoryTotals).reduce((sum, amount) => sum + amount, 0);
     
-    const newCategories = INITIAL_CATEGORIES.map(({ id, name, color, icon }) => ({
-        id,
-        name,
-        color,
-        icon,
-        amount: categoryTotals[id] || 0,
-    }));
-
-    const savingsCategory = newCategories.find(c => c.id === 'savings');
-    if (savingsCategory) {
-        savingsCategory.amount = Math.max(0, income - totalSpent);
-    }
-
-    const newBudget: BudgetRecord = {
-        id: Date.now().toString(),
-        name,
-        totalIncome: income,
-        categories: newCategories,
-        dateSaved: new Date().toISOString(),
-        frequency: 'mensual', // Default frequency for auto-created budgets
-    };
-
-    setSavedBudgets(prev => [newBudget, ...prev]);
-    const alertMessage = isAutomatic
-        ? `¡Nuevo presupuesto "${name}" creado automáticamente al finalizar tu ciclo de pago!`
-        : `¡Presupuesto "${name}" creado con éxito a partir de tus gastos del período!`;
-    alert(alertMessage);
-  }, []);
-
-    // Effect for automatic budget creation at end of cycle
-    useEffect(() => {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayStr = today.toISOString().split('T')[0];
-        
-        if (lastCycleCheckDate === todayStr) {
-            return; // Already checked today
-        }
-        
-        if (payCycleConfig) {
-            let cycleStartDate = new Date(payCycleConfig.startDate);
-            cycleStartDate.setHours(0, 0, 0, 0);
-            let nextCycleDate = new Date(cycleStartDate);
-
-            // Find the most recent cycle start date that has passed
-            while(nextCycleDate <= today) {
-                cycleStartDate = new Date(nextCycleDate);
-                switch(payCycleConfig.frequency) {
-                    case 'semanal': nextCycleDate.setDate(nextCycleDate.getDate() + 7); break;
-                    case 'quincenal': nextCycleDate.setDate(nextCycleDate.getDate() + 14); break;
-                    case 'mensual': nextCycleDate.setMonth(nextCycleDate.getMonth() + 1); break;
-                    case 'anual': nextCycleDate.setFullYear(nextCycleDate.getFullYear() + 1); break;
-                }
-            }
-            
-            // cycleEndDate is the day before the next cycle starts
-            const cycleEndDate = new Date(nextCycleDate);
-            cycleEndDate.setDate(cycleEndDate.getDate() - 1);
-
-            // Check if today is the end of a cycle that we haven't processed
-            if (today >= cycleEndDate) {
-                 const cycleStartDateStr = cycleStartDate.toISOString().split('T')[0];
-                 const cycleEndDateStr = cycleEndDate.toISOString().split('T')[0];
-                 
-                 // Check if a budget for this cycle already exists
-                 const budgetExists = savedBudgets.some(b => b.name.includes(`(${cycleStartDate.toLocaleDateString()})`));
-
-                 if (!budgetExists) {
-                    // FIX: Replaced .map().flat() with .reduce() for better TypeScript type inference.
-                    const dailyExpensesForCycle = Object.entries(dailyExpenses)
-                        .filter(([dateKey]) => dateKey >= cycleStartDateStr && dateKey <= cycleEndDateStr)
-                        // Fix: Cast `daily` to `DailyExpense[]` to resolve type inference issue.
-                        .reduce((acc: DailyExpense[], [, daily]) => acc.concat(daily as DailyExpense[]), []);
-
-                    const futureExpensesForCycle: DailyExpense[] = [];
-                    futureExpenses.forEach(fe => {
-                        let occurrenceDate = new Date(fe.startDate);
-                        const feEndDate = fe.endDate ? new Date(fe.endDate) : null;
-                        
-                        while(occurrenceDate <= cycleEndDate) {
-                             if (occurrenceDate >= cycleStartDate && (!feEndDate || occurrenceDate <= feEndDate)) {
-                                futureExpensesForCycle.push({
-                                    id: `${fe.id}-${occurrenceDate.toISOString()}`,
-                                    note: `(Planificado) ${fe.note}`,
-                                    amount: fe.amount,
-                                    categoryId: fe.categoryId,
-                                });
-                             }
-                             if (fe.frequency === 'una-vez') break;
-                             switch(fe.frequency) {
-                                case 'semanal': occurrenceDate.setDate(occurrenceDate.getDate() + 7); break;
-                                case 'quincenal': occurrenceDate.setDate(occurrenceDate.getDate() + 14); break;
-                                case 'mensual': occurrenceDate.setMonth(occurrenceDate.getMonth() + 1); break;
-                                case 'anual': occurrenceDate.setFullYear(occurrenceDate.getFullYear() + 1); break;
-                             }
-                        }
-                    });
-
-                    const expensesForCycle = [...dailyExpensesForCycle, ...futureExpensesForCycle];
-
-                    if (expensesForCycle.length > 0 || payCycleConfig.income > 0) {
-                        handleCreateBudgetFromExpenses(
-                            `Automático ${cycleStartDate.toLocaleDateString()}`,
-                            payCycleConfig.income,
-                            expensesForCycle,
-                            true // isAutomatic
-                        );
-                    }
-                 }
-            }
-        }
-
-        setLastCycleCheckDate(todayStr);
-
-    }, [payCycleConfig, dailyExpenses, futureExpenses, savedBudgets, lastCycleCheckDate, handleCreateBudgetFromExpenses]);
-
-    // Effect for the "live" current cycle budget
-    useEffect(() => {
-        if (!payCycleConfig) {
-            setCurrentCycleBudget(null);
-            return;
-        }
-
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        let cycleStartDate = new Date(payCycleConfig.startDate);
-        cycleStartDate.setHours(0, 0, 0, 0);
-        
-        if (cycleStartDate > today) { // Cycle hasn't started yet
-            setCurrentCycleBudget(null);
-            return;
-        }
-
-        // Find the start date of the current cycle
-        let nextCycleStartDate = new Date(cycleStartDate);
-        while (true) {
-            let tempNext = new Date(nextCycleStartDate);
-            switch (payCycleConfig.frequency) {
-                case 'semanal': tempNext.setDate(tempNext.getDate() + 7); break;
-                case 'quincenal': tempNext.setDate(tempNext.getDate() + 14); break;
-                case 'mensual': tempNext.setMonth(tempNext.getMonth() + 1); break;
-                case 'anual': tempNext.setFullYear(tempNext.getFullYear() + 1); break;
-            }
-            if (tempNext > today) break;
-            nextCycleStartDate = tempNext;
-        }
-        cycleStartDate = nextCycleStartDate;
-        
-        const cycleEndDate = new Date(nextCycleStartDate);
-        switch (payCycleConfig.frequency) {
-            case 'semanal': cycleEndDate.setDate(cycleEndDate.getDate() + 7 - 1); break;
-            case 'quincenal': cycleEndDate.setDate(cycleEndDate.getDate() + 14 - 1); break;
-            case 'mensual': cycleEndDate.setMonth(cycleEndDate.getMonth() + 1); cycleEndDate.setDate(0); break;
-            case 'anual': cycleEndDate.setFullYear(cycleEndDate.getFullYear() + 1); cycleEndDate.setDate(0); break;
-        }
-
-        const cycleStartDateStr = cycleStartDate.toISOString().split('T')[0];
-        const cycleEndDateStr = cycleEndDate.toISOString().split('T')[0];
-
-        const daily = Object.entries(dailyExpenses)
-            .filter(([date]) => date >= cycleStartDateStr && date <= cycleEndDateStr)
-            .reduce((acc, [, exp]) => acc.concat(exp as DailyExpense[]), [] as DailyExpense[]);
-        
-        const future = futureExpenses.flatMap(fe => {
-            const occurrences: DailyExpense[] = [];
-            let currentDate = new Date(fe.startDate);
-            const feEndDate = fe.endDate ? new Date(fe.endDate) : null;
-
-            while(currentDate <= cycleEndDate && (!feEndDate || currentDate <= feEndDate)) {
-                if (currentDate >= cycleStartDate) {
-                    occurrences.push({
-                        id: `${fe.id}-${currentDate.toISOString()}`,
-                        note: `(Planificado) ${fe.note}`,
-                        amount: fe.amount,
-                        categoryId: fe.categoryId
-                    });
-                }
-                if (fe.frequency === 'una-vez') break;
-                switch(fe.frequency) {
-                    case 'semanal': currentDate.setDate(currentDate.getDate() + 7); break;
-                    case 'quincenal': currentDate.setDate(currentDate.getDate() + 14); break;
-                    case 'mensual': currentDate.setMonth(currentDate.getMonth() + 1); break;
-                    case 'anual': currentDate.setFullYear(currentDate.getFullYear() + 1); break;
-                }
-            }
-            return occurrences;
-        });
-        
-        const allExpensesForCycle = [...daily, ...future];
-        const categoryTotals: { [key: string]: number } = {};
-        allExpensesForCycle.forEach(exp => {
-            categoryTotals[exp.categoryId] = (categoryTotals[exp.categoryId] || 0) + exp.amount;
-        });
-
-        const totalSpent = Object.values(categoryTotals).reduce((sum, amount) => sum + amount, 0);
-
-        const budgetCategories = INITIAL_CATEGORIES.map(cat => ({
-            ...cat,
-            amount: categoryTotals[cat.id] || 0
-        }));
-
-        const savings = Math.max(0, payCycleConfig.income - totalSpent);
-        const savingsCategory = budgetCategories.find(c => c.id === 'savings');
-        if (savingsCategory) {
-            savingsCategory.amount = savings;
-        }
-
-        setCurrentCycleBudget({
-            id: 'current_cycle_budget',
-            name: `Presupuesto del Ciclo Actual (${cycleStartDate.toLocaleDateString()})`,
-            totalIncome: payCycleConfig.income,
-            categories: budgetCategories,
-            dateSaved: cycleStartDate.toISOString(),
-            frequency: payCycleConfig.frequency
-        });
-
-    }, [payCycleConfig, dailyExpenses, futureExpenses]);
-
-  const handleOpenCreateModal = useCallback(() => {
-    setEditingBudget(null); // Null signifies "create" mode for the modal
-    setIsCreateModalOpen(true);
-  }, []);
-
-  const handleOpenEditModal = useCallback((budget: BudgetRecord) => {
-    setEditingBudget(budget);
-  }, []);
-  
-  const handleCloseEditModal = useCallback(() => {
-    setEditingBudget(null);
-    setIsCreateModalOpen(false);
-  }, []);
-
-  const handleSaveNewBudget = useCallback((newBudgetData: Omit<BudgetRecord, 'id'>) => {
-    const newBudget: BudgetRecord = {
-      ...newBudgetData,
-      id: Date.now().toString(),
-    };
-    const newSavedBudgets = [...savedBudgets, newBudget].sort((a,b) => new Date(b.dateSaved).getTime() - new Date(a.dateSaved).getTime());
-    setSavedBudgets(newSavedBudgets);
-    setActiveBudgetId(newBudget.id);
-    alert(`¡Presupuesto "${newBudget.name}" guardado con éxito!`);
-  }, [savedBudgets]);
-
-  const handleUpdateBudget = useCallback((updatedBudget: BudgetRecord) => {
-    const updatedBudgets = savedBudgets.map(b =>
-      b.id === updatedBudget.id ? updatedBudget : b
-    );
-    setSavedBudgets(updatedBudgets);
-    alert(`¡Presupuesto "${updatedBudget.name}" actualizado con éxito!`);
-  }, [savedBudgets]);
-  
-  const handleDeleteBudget = useCallback((id: string) => {
-    const budgetToDeleteIndex = savedBudgets.findIndex(b => b.id === id);
-    if (budgetToDeleteIndex === -1) return;
-
-    const remainingBudgets = savedBudgets.filter(b => b.id !== id);
-    setSavedBudgets(remainingBudgets);
+    const now = new Date();
+    const { startDate, frequency } = activeCycleConfig;
+    const cycleStart = new Date(`${startDate}T00:00:00`);
     
-    if (activeBudgetId === id) {
-        if (remainingBudgets.length > 0) {
-            const sorted = [...remainingBudgets].sort((a, b) => new Date(b.dateSaved).getTime() - new Date(a.dateSaved).getTime());
-            setActiveBudgetId(sorted[0].id);
-        } else {
-            setActiveBudgetId(null);
-        }
-    }
-  }, [activeBudgetId, savedBudgets]);
+    let currentCycleStart = new Date(cycleStart);
+    let nextCycleStart = new Date(currentCycleStart);
 
-  const handleOpenDeleteModal = useCallback((budget: BudgetRecord) => {
-    setBudgetToDelete(budget);
-    setIsDeleteModalOpen(true);
-  }, []);
-
-  const handleCloseDeleteModal = useCallback(() => {
-    setBudgetToDelete(null);
-    setIsDeleteModalOpen(false);
-  }, []);
-
-  const handleConfirmDelete = useCallback(() => {
-    if (budgetToDelete) {
-        handleDeleteBudget(budgetToDelete.id);
-    }
-    handleCloseDeleteModal();
-  }, [budgetToDelete, handleDeleteBudget, handleCloseDeleteModal]);
-
-  const handleConfirmForceCreateBudget = useCallback(() => {
-    if (!currentCycleBudget) {
-      alert("No hay un presupuesto de ciclo activo para guardar.");
-      return;
-    }
-
-    const budgetToSave = {
-      ...currentCycleBudget,
-      id: Date.now().toString(),
-      name: `Presupuesto Parcial (${new Date(currentCycleBudget.dateSaved).toLocaleDateString('es-ES')})`,
-      dateSaved: new Date().toISOString()
-    };
-    
-    const budgetExists = savedBudgets.some(b => b.name === budgetToSave.name);
-    if (budgetExists) {
-      alert(`Ya existe un presupuesto llamado "${budgetToSave.name}". Por favor, elimina o renombra el existente si quieres crear uno nuevo.`);
-      return;
-    }
-
-    setSavedBudgets(prev => [budgetToSave, ...prev]);
-    alert(`¡Presupuesto "${budgetToSave.name}" guardado en tu historial!`);
-
-  }, [currentCycleBudget, savedBudgets]);
-
-
-  const handleOpenForceCreateModal = useCallback(() => {
-    if (!payCycleConfig) {
-      alert("Primero debes configurar un ciclo de pago.");
-      return;
-    }
-     if (!currentCycleBudget) {
-      alert("No hay un presupuesto de ciclo activo para guardar.");
-      return;
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const cycleStartDate = new Date(currentCycleBudget.dateSaved);
-    
-    setForceCreateInfo({ startDate: cycleStartDate, endDate: today });
-    setIsForceCreateModalOpen(true);
-
-  }, [payCycleConfig, currentCycleBudget]);
-
-
-  const averageBudgetData = useMemo(() => {
-    if (savedBudgets.length === 0) {
-        return {
-            averageTotalIncome: 0,
-            averageCategories: INITIAL_CATEGORIES.map(c => ({ ...c, amount: 0 })),
-        };
-    }
-
-    const totalIncomeSum = savedBudgets.reduce((sum, budget) => sum + budget.totalIncome, 0);
-    const categorySums: { [key: string]: number } = {};
-
-    for (const budget of savedBudgets) {
-        for (const category of budget.categories) {
-            categorySums[category.id] = (categorySums[category.id] || 0) + category.amount;
-        }
-    }
-
-    const averageTotalIncome = totalIncomeSum / savedBudgets.length;
-    const averageCategories = INITIAL_CATEGORIES.map(category => ({
-        ...category,
-        amount: (categorySums[category.id] || 0) / savedBudgets.length,
-    }));
-
-    return { averageTotalIncome, averageCategories };
-  }, [savedBudgets]);
-
-  const averageChartData = useMemo(() => {
-      return averageBudgetData.averageCategories.map(cat => ({
-          name: cat.name,
-          value: cat.amount,
-          fill: cat.color,
-      })).filter(cat => cat.value > 0);
-  }, [averageBudgetData]);
-
-  const currentPeriodSpendingData = useMemo(() => {
-    if (!payCycleConfig) {
-      return { spentByCategory: [], periodStartDate: null, periodEndDate: null };
-    }
-
-    const today = new Date();
-    today.setHours(23, 59, 59, 999); // Use end of today for inclusive check
-
-    let cycleStartDate = new Date(payCycleConfig.startDate);
-    cycleStartDate.setHours(0, 0, 0, 0);
-
-    // Find the start date of the current cycle
-    while (true) {
-      let nextCycleStartDate = new Date(cycleStartDate);
-      switch (payCycleConfig.frequency) {
-        case 'semanal': nextCycleStartDate.setDate(nextCycleStartDate.getDate() + 7); break;
-        case 'quincenal': nextCycleStartDate.setDate(nextCycleStartDate.getDate() + 14); break;
-        case 'mensual': nextCycleStartDate.setMonth(nextCycleStartDate.getMonth() + 1); break;
-        case 'anual': nextCycleStartDate.setFullYear(nextCycleStartDate.getFullYear() + 1); break;
+    while (nextCycleStart <= now) {
+      currentCycleStart = new Date(nextCycleStart);
+      switch (frequency) {
+        case 'semanal': nextCycleStart.setDate(nextCycleStart.getDate() + 7); break;
+        case 'quincenal': nextCycleStart.setDate(nextCycleStart.getDate() + 14); break;
+        case 'mensual': nextCycleStart.setMonth(nextCycleStart.getMonth() + 1); break;
+        case 'anual': nextCycleStart.setFullYear(nextCycleStart.getFullYear() + 1); break;
       }
-      if (nextCycleStartDate > today) break;
-      cycleStartDate = nextCycleStartDate;
     }
     
-    const periodStartDate = new Date(cycleStartDate);
-    periodStartDate.setHours(0,0,0,0);
-    const periodEndDate = new Date();
-    periodEndDate.setHours(0,0,0,0);
+    const periodStartDate = currentCycleStart;
+    const periodEndDate = new Date(nextCycleStart.getTime() - 1);
 
+    const spentByCategory = new Map<string, { category: Category; amount: number }>();
+    INITIAL_CATEGORIES.forEach(cat => spentByCategory.set(cat.id, { category: cat, amount: 0 }));
 
-    const cycleStartDateStr = periodStartDate.toISOString().split('T')[0];
-    const cycleEndDateStr = today.toISOString().split('T')[0];
-
-    // Get daily expenses
-    // FIX: Replaced .map().flat() with .reduce() for better TypeScript type inference.
-    const dailyExpensesForPeriod = Object.entries(dailyExpenses)
-      .filter(([dateKey]) => dateKey >= cycleStartDateStr && dateKey <= cycleEndDateStr)
-      // Fix: Cast `daily` to `DailyExpense[]` to resolve type inference issue.
-      .reduce((acc: DailyExpense[], [, daily]) => acc.concat(daily as DailyExpense[]), []);
-
-    // Get future expenses
-    const futureExpensesForPeriod: DailyExpense[] = [];
-    futureExpenses.forEach(fe => {
-      let currentDate = new Date(fe.startDate);
-      const feEndDate = fe.endDate ? new Date(fe.endDate) : null;
-      while (currentDate <= today) {
-        if (currentDate >= periodStartDate && (!feEndDate || currentDate <= feEndDate)) {
-          futureExpensesForPeriod.push({
-            id: `${fe.id}-${currentDate.toISOString()}`,
-            note: `(Planificado) ${fe.note}`,
-            amount: fe.amount,
-            categoryId: fe.categoryId,
-          });
-        }
-        if (fe.frequency === 'una-vez') break;
-        switch (fe.frequency) {
-          case 'semanal': currentDate.setDate(currentDate.getDate() + 7); break;
-          case 'quincenal': currentDate.setDate(currentDate.getDate() + 14); break;
-          case 'mensual': currentDate.setMonth(currentDate.getMonth() + 1); break;
-          case 'anual': currentDate.setFullYear(currentDate.getFullYear() + 1); break;
-        }
+    Object.entries(currentDailyExpenses).forEach(([dateStr, expenses]) => {
+      const expenseDate = new Date(`${dateStr}T12:00:00`);
+      if (expenseDate >= periodStartDate && expenseDate <= periodEndDate) {
+        // FIX: Cast `expenses` to `DailyExpense[]` to resolve `unknown` type error.
+        (expenses as DailyExpense[]).forEach(exp => {
+          const entry = spentByCategory.get(exp.categoryId);
+          if (entry) {
+            entry.amount += exp.amount;
+          }
+        });
       }
     });
 
-    const allExpenses: DailyExpense[] = [...dailyExpensesForPeriod, ...futureExpensesForPeriod];
-    const categoryTotals: { [key: string]: number } = {};
-    for (const expense of allExpenses) {
-      categoryTotals[expense.categoryId] = (categoryTotals[expense.categoryId] || 0) + expense.amount;
+    return { 
+      currentPeriodSpending: Array.from(spentByCategory.values()).filter(item => item.amount > 0),
+      periodStartDate,
+      periodEndDate
+    };
+
+  }, [activeCycleConfig, currentDailyExpenses]);
+
+  // Effect to calculate and set the "live" budget for the current cycle
+  useEffect(() => {
+    if (activeCycleConfig && periodStartDate && periodEndDate) {
+      const budgetCategories = INITIAL_CATEGORIES.map(cat => {
+        const spentItem = currentPeriodSpending.find(item => item.category.id === cat.id);
+        return {
+          ...cat,
+          amount: spentItem ? spentItem.amount : 0,
+        };
+      });
+      
+      const liveBudget: BudgetRecord = {
+        id: 'live-cycle-budget',
+        name: `Presupuesto de Ciclo Actual (${activeCycleProfile?.name || ''})`,
+        totalIncome: activeCycleConfig.income,
+        categories: budgetCategories,
+        dateSaved: new Date().toISOString(),
+        frequency: activeCycleConfig.frequency,
+      };
+      setCurrentCycleBudget(liveBudget);
+    } else {
+      setCurrentCycleBudget(null);
     }
+  }, [currentPeriodSpending, activeCycleConfig, periodStartDate, periodEndDate, activeCycleProfile]);
 
-    const categoryMap = new Map(INITIAL_CATEGORIES.map(c => [c.id, c]));
 
-    const spentByCategory = Object.entries(categoryTotals)
-      .map(([categoryId, amount]) => ({
-        category: categoryMap.get(categoryId)!,
-        amount,
-      }))
-      .filter(item => item.category) // Ensure category exists
-      .sort((a, b) => b.amount - a.amount);
+  // Save to localStorage whenever data changes
+  useEffect(() => {
+    window.localStorage.setItem(KEYS.BUDGETS, JSON.stringify(savedBudgets));
+  }, [savedBudgets, KEYS.BUDGETS]);
+  
+  useEffect(() => {
+    window.localStorage.setItem(KEYS.GLOBAL_SAVINGS, JSON.stringify(globalSavings));
+  }, [globalSavings, KEYS.GLOBAL_SAVINGS]);
 
-    return { spentByCategory, periodStartDate, periodEndDate };
-  }, [payCycleConfig, dailyExpenses, futureExpenses]);
+  useEffect(() => {
+    window.localStorage.setItem(KEYS.CYCLE_PROFILES, JSON.stringify(cycleProfiles));
+  }, [cycleProfiles, KEYS.CYCLE_PROFILES]);
 
-  const renderSummaryAndCharts = () => {
-    return (
-        <div className="space-y-8">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 bg-neutral-800 p-6 rounded-3xl shadow-lg h-[400px]">
-              <h3 className="text-xl font-bold mb-4 text-neutral-100">Distribución Promedio de Gastos</h3>
-              {savedBudgets.length > 0 ? (
-                  <BudgetChart data={averageChartData} totalIncome={averageBudgetData.averageTotalIncome} />
-              ) : (
-                  <div className="flex items-center justify-center h-full text-center text-neutral-500 p-4">
-                     <p>Añade tu primer presupuesto para ver un resumen promedio de tus gastos.</p>
-                  </div>
-              )}
-            </div>
-            <div className="lg:col-span-1">
-                <GlobalSavingsCard
-                    value={globalSavings}
-                    onSave={setGlobalSavings}
-                />
-            </div>
-          </div>
-        </div>
-    )
-  }
+  useEffect(() => {
+    if (activeCycleId) {
+      window.localStorage.setItem(KEYS.ACTIVE_CYCLE_ID, activeCycleId);
+    } else {
+      window.localStorage.removeItem(KEYS.ACTIVE_CYCLE_ID);
+    }
+  }, [activeCycleId, KEYS.ACTIVE_CYCLE_ID]);
 
-    // FAB Action handlers
-    const handleFabQuickBudget = () => {
-        setIsFabMenuOpen(false);
-        handleOpenCreateModal();
+  useEffect(() => {
+    window.localStorage.setItem(KEYS.ALL_DAILY, JSON.stringify(allDailyExpenses));
+  }, [allDailyExpenses, KEYS.ALL_DAILY]);
+
+  useEffect(() => {
+    window.localStorage.setItem(KEYS.ALL_FUTURE, JSON.stringify(allFutureExpenses));
+  }, [allFutureExpenses, KEYS.ALL_FUTURE]);
+
+  useEffect(() => {
+    if (lastCycleCheckDate) {
+      window.localStorage.setItem(KEYS.LAST_CYCLE_CHECK, lastCycleCheckDate);
+    } else {
+      window.localStorage.removeItem(KEYS.LAST_CYCLE_CHECK);
+    }
+  }, [lastCycleCheckDate, KEYS.LAST_CYCLE_CHECK]);
+
+
+  // Handlers for budget creation, update, and deletion
+  const handleSaveNewBudget = (newBudgetData: Omit<BudgetRecord, 'id'>) => {
+    const newBudget: BudgetRecord = {
+        ...newBudgetData,
+        id: Date.now().toString(),
     };
+    const updatedBudgets = [...savedBudgets, newBudget];
+    setSavedBudgets(updatedBudgets);
+    setActiveBudgetId(newBudget.id); // Set the new budget as active
+  };
 
-    const ensureCalendarAndProceed = (actionCallback: () => void) => {
-        if (cycleProfiles.length === 0) {
-            const newProfile: CycleProfile = {
-                id: Date.now().toString(),
-                name: 'Mi Primer Calendario',
-                color: '#3b82f6', // default blue
-                config: null,
-            };
-            setCycleProfiles([newProfile]);
-            setActiveCycleId(newProfile.id);
-            alert("No tenías calendarios, así que hemos creado 'Mi Primer Calendario' para ti.");
+  const handleUpdateBudget = (updatedBudget: BudgetRecord) => {
+    setSavedBudgets(prev => prev.map(b => b.id === updatedBudget.id ? updatedBudget : b));
+  };
+  
+  const openDeleteModal = (budget: BudgetRecord) => {
+    setBudgetToDelete(budget);
+    setIsDeleteModalOpen(true);
+  };
+  
+  const handleConfirmDelete = () => {
+    if (budgetToDelete) {
+      const newBudgets = savedBudgets.filter(b => b.id !== budgetToDelete.id);
+      setSavedBudgets(newBudgets);
+      
+      // If the deleted budget was active, select a new one
+      if (activeBudgetId === budgetToDelete.id) {
+        if (newBudgets.length > 0) {
+          const sorted = [...newBudgets].sort((a, b) => new Date(b.dateSaved).getTime() - new Date(a.dateSaved).getTime());
+          setActiveBudgetId(sorted[0].id);
+        } else {
+          setActiveBudgetId(null);
         }
-        actionCallback();
-    };
-    
-    const handleFabAddCycle = () => {
-        ensureCalendarAndProceed(() => {
-            setIsFabMenuOpen(false);
-            setActiveTab('expenses');
-            setPendingAction('add_cycle');
-        });
-    };
-    const handleFabAddDailyExpense = () => {
-        ensureCalendarAndProceed(() => {
-            setIsFabMenuOpen(false);
-            setActiveTab('expenses');
-            setPendingAction('add_daily_expense');
-        });
-    };
-    const handleFabAddFutureExpense = () => {
-        ensureCalendarAndProceed(() => {
-            setIsFabMenuOpen(false);
-            setActiveTab('expenses');
-            setPendingAction('add_future_expense');
-        });
-    };
+      }
+      setIsDeleteModalOpen(false);
+      setBudgetToDelete(null);
+    }
+  };
+
+  const handleCreateNewBudget = () => {
+    setEditingBudget(null);
+    setIsCreateModalOpen(true);
+  };
+
+  const handleEditBudget = (budget: BudgetRecord) => {
+    setEditingBudget(budget);
+    setIsCreateModalOpen(true);
+  };
+  
+  const handleForceCreateBudget = () => {
+    if (periodStartDate && periodEndDate) {
+      setForceCreateInfo({ startDate: periodStartDate, endDate: periodEndDate });
+      setIsForceCreateModalOpen(true);
+    } else {
+      alert("No hay un ciclo de pago activo configurado para crear un presupuesto.")
+    }
+  };
+
+  const handleConfirmForceCreate = () => {
+    if (activeCycleConfig && periodStartDate && periodEndDate) {
+      // FIX: Add explicit type to `allExpensesInCycle` to ensure correct type inference later.
+      const allExpensesInCycle: { [date: string]: DailyExpense[] } = { ...currentDailyExpenses };
+
+      // Add future expenses to the daily list for calculation
+      for (const fe of currentFutureExpenses) {
+        let occurrenceDate = new Date(`${fe.startDate}T00:00:00`);
+        const feEndDate = fe.endDate ? new Date(fe.endDate) : null;
+        
+        while(occurrenceDate <= periodEndDate && (!feEndDate || occurrenceDate <= feEndDate)) {
+             if (occurrenceDate >= periodStartDate) {
+                const dateKey = `${occurrenceDate.getFullYear()}-${(occurrenceDate.getMonth() + 1).toString().padStart(2, '0')}-${occurrenceDate.getDate().toString().padStart(2, '0')}`;
+                
+                const dailyExp: DailyExpense = { id: `future-${fe.id}-${dateKey}`, note: fe.note, amount: fe.amount, categoryId: fe.categoryId };
+                allExpensesInCycle[dateKey] = [...(allExpensesInCycle[dateKey] || []), dailyExp];
+             }
+             if (fe.frequency === 'una-vez') break;
+             switch(fe.frequency) {
+                case 'semanal': occurrenceDate.setDate(occurrenceDate.getDate() + 7); break;
+                case 'quincenal': occurrenceDate.setDate(occurrenceDate.getDate() + 14); break;
+                case 'mensual': occurrenceDate.setMonth(occurrenceDate.getMonth() + 1); break;
+                case 'anual': occurrenceDate.setFullYear(occurrenceDate.getFullYear() + 1); break;
+             }
+        }
+      }
+
+      const categoryAmounts = new Map<string, number>();
+      Object.values(allExpensesInCycle).flat().forEach(exp => {
+        // FIX: Cast exp to DailyExpense to allow property access, as it was inferred as 'unknown'.
+        const dailyExpense = exp as DailyExpense;
+        categoryAmounts.set(dailyExpense.categoryId, (categoryAmounts.get(dailyExpense.categoryId) || 0) + dailyExpense.amount);
+      });
+      
+      const newCategories = INITIAL_CATEGORIES.map(cat => ({
+        ...cat,
+        amount: categoryAmounts.get(cat.id) || 0,
+      }));
+      
+      const totalAllocated = newCategories.filter(c => c.id !== 'savings').reduce((sum, c) => sum + c.amount, 0);
+      const savings = Math.max(0, activeCycleConfig.income - totalAllocated);
+      const savingsCategoryIndex = newCategories.findIndex(c => c.id === 'savings');
+      if (savingsCategoryIndex > -1) {
+        newCategories[savingsCategoryIndex].amount = savings;
+      }
+
+      const today = new Date();
+      const newBudget: Omit<BudgetRecord, 'id'> = {
+        name: `Presupuesto Parcial ${today.toLocaleDateString('es-ES')}`,
+        totalIncome: activeCycleConfig.income,
+        categories: newCategories,
+        dateSaved: today.toISOString(),
+        frequency: activeCycleConfig.frequency,
+      };
+
+      handleSaveNewBudget(newBudget);
+      setActiveTab('history'); // Navigate to history to see the new budget
+    }
+  };
+
+
+  const FAB_ACTIONS = [
+    { id: 'add_cycle', label: 'Añadir Calendario', icon: 'fa-calendar-plus', action: () => { setPendingAction('add_cycle'); setActiveTab('expenses'); } },
+    { id: 'add_daily_expense', label: 'Gasto Diario', icon: 'fa-cash-register', action: () => { setPendingAction('add_daily_expense'); setActiveTab('expenses'); } },
+    { id: 'add_future_expense', label: 'Gasto Planificado', icon: 'fa-clock', action: () => { setPendingAction('add_future_expense'); setActiveTab('expenses'); } },
+    { id: 'add_budget', label: 'Presupuesto Rápido', icon: 'fa-file-invoice-dollar', action: handleCreateNewBudget },
+  ];
 
   return (
-    <div className="min-h-screen bg-neutral-900 text-neutral-200 font-sans">
-      <Header 
-        activeTab={activeTab} 
-        onTabChange={setActiveTab}
-        onMenuClick={() => setIsMenuOpen(true)}
-      />
-      <SideMenu 
-        isOpen={isMenuOpen}
-        onClose={() => setIsMenuOpen(false)}
-        currentUser={currentUser}
-        onLogout={onLogout}
-      />
+    <>
+      <Header activeTab={activeTab} onTabChange={setActiveTab} onMenuClick={() => setIsMenuOpen(true)} />
+      <SideMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} currentUser={currentUser} onLogout={onLogout} />
+      <main className="container mx-auto px-4 md:px-8 py-8 pb-24 md:pb-8">
+        {activeTab === 'dashboard' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-6">
+               <CurrentPeriodSpending 
+                  spentByCategory={currentPeriodSpending} 
+                  periodStartDate={periodStartDate}
+                  periodEndDate={periodEndDate}
+                />
+            </div>
+            <div className="lg:col-span-1 space-y-6">
+              <DashboardNotifications 
+                allDailyExpenses={allDailyExpenses}
+                allFutureExpenses={allFutureExpenses}
+                categories={INITIAL_CATEGORIES}
+                cycleProfiles={cycleProfiles}
+              />
+              <HistoryPanel
+                  budgets={savedBudgets}
+                  activeBudgetId={activeBudgetId}
+                  onOpenDeleteModal={openDeleteModal}
+                  onCreateNew={handleCreateNewBudget}
+                  onEditBudget={handleEditBudget}
+              />
+            </div>
+          </div>
+        )}
+        {activeTab === 'history' && (
+            <HistoryView 
+                budgets={savedBudgets} 
+                globalSavings={globalSavings}
+                onUpdateGlobalSavings={setGlobalSavings}
+                onEditBudget={handleEditBudget}
+                onOpenDeleteModal={openDeleteModal}
+            />
+        )}
+        {activeTab === 'expenses' && (
+          <DailyExpenseView
+            expenses={currentDailyExpenses}
+            setExpenses={setCurrentDailyExpenses}
+            categories={INITIAL_CATEGORIES}
+            onForceCreateBudget={handleForceCreateBudget}
+            futureExpenses={currentFutureExpenses}
+            setFutureExpenses={setCurrentFutureExpenses}
+            currentCycleBudget={currentCycleBudget}
+            cycleProfiles={cycleProfiles}
+            setCycleProfiles={setCycleProfiles}
+            activeCycleId={activeCycleId}
+            setActiveCycleId={setActiveCycleId}
+            pendingAction={pendingAction}
+            onActionHandled={() => setPendingAction(null)}
+          />
+        )}
+        {activeTab === 'calculators' && (
+          <CalculatorsView />
+        )}
+      </main>
+
+       {/* FAB */}
+      <div className={`fixed bottom-24 right-4 md:bottom-6 md:right-6 z-40 transition-all duration-300 ${isFabVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0 pointer-events-none'}`}>
+          <div className="relative flex flex-col items-end gap-3">
+              <div className={`transition-all duration-300 ease-in-out ${isFabMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                  <div className="flex flex-col items-end gap-3">
+                      {FAB_ACTIONS.map(action => (
+                          <FabAction 
+                            key={action.id}
+                            label={action.label} 
+                            icon={action.icon}
+                            buttonProps={{ onClick: () => { action.action(); setIsFabMenuOpen(false); } }} 
+                          />
+                      ))}
+                  </div>
+              </div>
+              <button 
+                  onClick={() => setIsFabMenuOpen(!isFabMenuOpen)}
+                  className="bg-blue-500 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform duration-300 active:scale-90"
+                  aria-haspopup="true"
+                  aria-expanded={isFabMenuOpen}
+                  aria-label="Abrir menú de acciones rápidas"
+              >
+                  <i className={`fa-solid ${isFabMenuOpen ? 'fa-times' : 'fa-plus'} text-2xl transition-transform duration-300 ${isFabMenuOpen ? 'rotate-180' : ''}`}></i>
+              </button>
+          </div>
+      </div>
+
+
+      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+
+      {/* Modals */}
       <BudgetEditorModal
-        isOpen={editingBudget !== null || isCreateModalOpen}
-        onClose={handleCloseEditModal}
-        budget={editingBudget}
-        onUpdate={handleUpdateBudget}
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
         onSave={handleSaveNewBudget}
+        onUpdate={handleUpdateBudget}
+        budget={editingBudget}
       />
       <ForceCreateBudgetModal
         isOpen={isForceCreateModalOpen}
         onClose={() => setIsForceCreateModalOpen(false)}
-        onConfirm={handleConfirmForceCreateBudget}
+        onConfirm={handleConfirmForceCreate}
         cycleStartDate={forceCreateInfo?.startDate || null}
         cycleEndDate={forceCreateInfo?.endDate || null}
       />
-      <DeleteConfirmationModal
-        isOpen={isDeleteModalOpen}
-        onClose={handleCloseDeleteModal}
-        onConfirm={handleConfirmDelete}
-        budgetName={budgetToDelete?.name || ''}
-        budgetDate={budgetToDelete?.dateSaved || ''}
-      />
-      <main className="container mx-auto p-4 md:p-8 pb-24 md:pb-8">
-        {activeTab === 'dashboard' && (
-           <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 lg:gap-12">
-              <div className="xl:col-span-2 space-y-8">
-                 <DashboardNotifications
-                    allDailyExpenses={allDailyExpenses}
-                    allFutureExpenses={allFutureExpenses}
-                    categories={INITIAL_CATEGORIES}
-                    cycleProfiles={cycleProfiles}
-                 />
-                 {renderSummaryAndCharts()}
-              </div>
-              <div className="space-y-8">
-                 <HistoryPanel 
-                    budgets={savedBudgets}
-                    activeBudgetId={activeBudgetId}
-                    onCreateNew={handleOpenCreateModal}
-                    onEditBudget={handleOpenEditModal}
-                    onOpenDeleteModal={handleOpenDeleteModal}
-                 />
-                 <CurrentPeriodSpending
-                    spentByCategory={currentPeriodSpendingData.spentByCategory}
-                    periodStartDate={currentPeriodSpendingData.periodStartDate}
-                    periodEndDate={currentPeriodSpendingData.periodEndDate}
-                 />
-              </div>
-            </div>
-        )}
-        {activeTab === 'history' && (
-          <HistoryView
-            budgets={savedBudgets}
-            globalSavings={globalSavings}
-            onUpdateGlobalSavings={setGlobalSavings}
-            onEditBudget={handleOpenEditModal}
-            onOpenDeleteModal={handleOpenDeleteModal}
-          />
-        )}
-        {activeTab === 'expenses' && (
-            <DailyExpenseView
-                expenses={dailyExpenses}
-                setExpenses={setDailyExpenses}
-                categories={INITIAL_CATEGORIES.filter(c => c.id !== 'savings')}
-                onForceCreateBudget={handleOpenForceCreateModal}
-                futureExpenses={futureExpenses}
-                setFutureExpenses={setFutureExpenses}
-                currentCycleBudget={currentCycleBudget}
-                cycleProfiles={cycleProfiles}
-                setCycleProfiles={setCycleProfiles}
-                activeCycleId={activeCycleId}
-                setActiveCycleId={setActiveCycleId}
-                pendingAction={pendingAction}
-                onActionHandled={() => setPendingAction(null)}
-            />
-        )}
-        {activeTab === 'calculators' && (
-            <CalculatorsView />
-        )}
-      </main>
-      {activeTab === 'dashboard' && (
-        <div className="fixed bottom-24 right-4 z-30 md:hidden flex flex-col items-end">
-             <div 
-              className={`flex flex-col items-end gap-4 transition-all duration-300 ease-in-out ${isFabMenuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}
-            >
-              <FabAction buttonProps={{onClick: handleFabAddFutureExpense}} label="Gasto Planificado" icon="fa-flag" />
-              <FabAction buttonProps={{onClick: handleFabAddDailyExpense}} label="Gasto Diario" icon="fa-cash-register" />
-              <FabAction buttonProps={{onClick: handleFabAddCycle}} label="Nuevo Ciclo" icon="fa-calendar-plus" />
-              <FabAction buttonProps={{onClick: handleFabQuickBudget}} label="Presupuesto Rápido" icon="fa-file-invoice-dollar" />
-          </div>
-          <button
-            onClick={() => setIsFabMenuOpen(!isFabMenuOpen)}
-            className={`mt-4 bg-blue-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg active:bg-blue-700 transition-all duration-300 ease-in-out ${isFabVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-0 pointer-events-none'} ${isFabMenuOpen ? 'rotate-45' : ''}`}
-            aria-label="Acciones rápidas"
-            aria-expanded={isFabMenuOpen}
-            tabIndex={isFabVisible ? 0 : -1}
-          >
-            <i className="fa-solid fa-plus text-2xl"></i>
-          </button>
-        </div>
+      {budgetToDelete && (
+        <DeleteConfirmationModal
+            isOpen={isDeleteModalOpen}
+            onClose={() => setIsDeleteModalOpen(false)}
+            onConfirm={handleConfirmDelete}
+            budgetName={budgetToDelete.name}
+            budgetDate={budgetToDelete.dateSaved}
+        />
       )}
-      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
-    </div>
+    </>
   );
 };
