@@ -1,3 +1,4 @@
+export {}; // This file is intentionally left blank to avoid conflicts with its counterpart in the src/ directory. The correct version is in 'src/'.
 import React, { useState, useEffect } from 'react';
 import { LoginView } from './components/LoginView';
 import { MainApp } from './MainApp';
