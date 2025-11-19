@@ -29,7 +29,6 @@ interface CurrentPeriodSpendingProps {
   periodEndDate: Date | null;
 }
 
-// FIX: Replaced the component definition with React.FC and an explicit props interface to fix the type error with the `key` prop.
 interface FabActionProps {
   buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement>, 
   label: string, 
@@ -128,7 +127,8 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
   const [savedBudgets, setSavedBudgets] = useState<BudgetRecord[]>(() => {
     try {
       const item = window.localStorage.getItem(KEYS.BUDGETS);
-      return item ? JSON.parse(item) : [];
+      const parsed = item ? JSON.parse(item) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch (error) {
       console.error("Failed to parse budgets from localStorage", error);
       return [];
@@ -139,7 +139,7 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
      try {
       const item = window.localStorage.getItem(KEYS.BUDGETS);
       const budgets = item ? JSON.parse(item) : [];
-      if (budgets.length > 0) {
+      if (Array.isArray(budgets) && budgets.length > 0) {
         const sorted = [...budgets].sort((a, b) => new Date(b.dateSaved).getTime() - new Date(a.dateSaved).getTime());
         return sorted[0].id;
       }
@@ -153,7 +153,8 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
   const [globalSavings, setGlobalSavings] = useState<number>(() => {
      try {
       const item = window.localStorage.getItem(KEYS.GLOBAL_SAVINGS);
-      return item ? JSON.parse(item) : 0;
+      const parsed = item ? JSON.parse(item) : 0;
+      return typeof parsed === 'number' ? parsed : 0;
     } catch (error) {
       console.error("Failed to parse global savings from localStorage", error);
       return 0;
@@ -163,25 +164,28 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
   const [cycleProfiles, setCycleProfiles] = useState<CycleProfile[]>(() => {
     try {
         const item = window.localStorage.getItem(KEYS.CYCLE_PROFILES);
-        return item ? JSON.parse(item) : [];
+        const parsed = item ? JSON.parse(item) : [];
+        return Array.isArray(parsed) ? parsed : [];
     } catch { return []; }
   });
   const [activeCycleId, setActiveCycleId] = useState<string | null>(() => {
     try {
-        const item = window.localStorage.getItem(KEYS.ACTIVE_CYCLE_ID);
-        return item ? JSON.parse(item) : null;
+        // ID is stored as a raw string, not JSON. Do not parse.
+        return window.localStorage.getItem(KEYS.ACTIVE_CYCLE_ID);
     } catch { return null; }
   });
   const [allDailyExpenses, setAllDailyExpenses] = useState<{ [cycleId: string]: { [date: string]: DailyExpense[] } }>(() => {
     try {
         const item = window.localStorage.getItem(KEYS.ALL_DAILY);
-        return item ? JSON.parse(item) : {};
+        const parsed = item ? JSON.parse(item) : {};
+        return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed : {};
     } catch { return {}; }
   });
   const [allFutureExpenses, setAllFutureExpenses] = useState<{ [cycleId: string]: FutureExpense[] }>(() => {
     try {
         const item = window.localStorage.getItem(KEYS.ALL_FUTURE);
-        return item ? JSON.parse(item) : {};
+        const parsed = item ? JSON.parse(item) : {};
+        return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed : {};
     } catch { return {}; }
   });
     
@@ -265,7 +269,8 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
   }, [savedBudgets, activeBudgetId]);
 
   // Derived state for current expenses (for the active cycle)
-  const currentDailyExpenses: { [date: string]: DailyExpense[] } = useMemo(() => activeCycleId ? allDailyExpenses[activeCycleId] || {} : {}, [allDailyExpenses, activeCycleId]);
+  // FIX: Explicitly type the return value of useMemo to prevent type inference issues.
+  const currentDailyExpenses = useMemo<{ [date: string]: DailyExpense[] }>(() => activeCycleId ? allDailyExpenses[activeCycleId] || {} : {}, [allDailyExpenses, activeCycleId]);
   const currentFutureExpenses = useMemo(() => activeCycleId ? allFutureExpenses[activeCycleId] || [] : [], [allFutureExpenses, activeCycleId]);
   const setCurrentDailyExpenses = useCallback((expenses: React.SetStateAction<{ [date: string]: DailyExpense[] }>) => {
     if (activeCycleId) {
