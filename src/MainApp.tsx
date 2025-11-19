@@ -265,7 +265,7 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
   }, [savedBudgets, activeBudgetId]);
 
   // Derived state for current expenses (for the active cycle)
-  const currentDailyExpenses = useMemo(() => activeCycleId ? allDailyExpenses[activeCycleId] || {} : {}, [allDailyExpenses, activeCycleId]);
+  const currentDailyExpenses: { [date: string]: DailyExpense[] } = useMemo(() => activeCycleId ? allDailyExpenses[activeCycleId] || {} : {}, [allDailyExpenses, activeCycleId]);
   const currentFutureExpenses = useMemo(() => activeCycleId ? allFutureExpenses[activeCycleId] || [] : [], [allFutureExpenses, activeCycleId]);
   const setCurrentDailyExpenses = useCallback((expenses: React.SetStateAction<{ [date: string]: DailyExpense[] }>) => {
     if (activeCycleId) {
@@ -312,8 +312,7 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
     Object.entries(currentDailyExpenses).forEach(([dateStr, expenses]) => {
       const expenseDate = new Date(`${dateStr}T12:00:00`);
       if (expenseDate >= periodStartDate && expenseDate <= periodEndDate) {
-        // FIX: Cast expenses to DailyExpense[] to resolve 'unknown' type error.
-        (expenses as DailyExpense[]).forEach(exp => {
+        expenses.forEach(exp => {
           const entry = spentByCategory.get(exp.categoryId);
           if (entry) {
             entry.amount += exp.amount;
@@ -329,6 +328,31 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
     };
 
   }, [activeCycleConfig, currentDailyExpenses]);
+
+  // Effect to calculate and set the "live" budget for the current cycle
+  useEffect(() => {
+    if (activeCycleConfig && periodStartDate && periodEndDate) {
+      const budgetCategories = INITIAL_CATEGORIES.map(cat => {
+        const spentItem = currentPeriodSpending.find(item => item.category.id === cat.id);
+        return {
+          ...cat,
+          amount: spentItem ? spentItem.amount : 0,
+        };
+      });
+      
+      const liveBudget: BudgetRecord = {
+        id: 'live-cycle-budget',
+        name: `Presupuesto de Ciclo Actual (${activeCycleProfile?.name || ''})`,
+        totalIncome: activeCycleConfig.income,
+        categories: budgetCategories,
+        dateSaved: new Date().toISOString(),
+        frequency: activeCycleConfig.frequency,
+      };
+      setCurrentCycleBudget(liveBudget);
+    } else {
+      setCurrentCycleBudget(null);
+    }
+  }, [currentPeriodSpending, activeCycleConfig, periodStartDate, periodEndDate, activeCycleProfile]);
 
     const averageBudgetData = useMemo(() => {
         if (savedBudgets.length === 0) {
@@ -487,9 +511,7 @@ export const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
 
       const categoryAmounts = new Map<string, number>();
       Object.values(allExpensesInCycle).flat().forEach(exp => {
-        // FIX: Cast exp to DailyExpense to allow property access, as it was inferred as 'unknown'.
-        const dailyExpense = exp as DailyExpense;
-        categoryAmounts.set(dailyExpense.categoryId, (categoryAmounts.get(dailyExpense.categoryId) || 0) + dailyExpense.amount);
+        categoryAmounts.set(exp.categoryId, (categoryAmounts.get(exp.categoryId) || 0) + exp.amount);
       });
       
       const newCategories = INITIAL_CATEGORIES.map(cat => ({
